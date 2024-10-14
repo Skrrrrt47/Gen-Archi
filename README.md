@@ -1,2 +1,11 @@
-# Gen-Archi
-Repository for Generation Architecture
+## Getting started
+
+```
+npm install
+```
+
+```
+npm start
+```
+
+## Dockerfile on its way ?
