@@ -1,120 +1,113 @@
-provider "azurerm" {
-  features {}
-  subscription_id = "<VOTRE_SUBSCRIPTION_ID>"
-  client_id       = "<VOTRE_CLIENT_ID>"
-  client_secret   = "<VOTRE_CLIENT_SECRET>"
-  tenant_id       = "<VOTRE_TENANT_ID>"
+terraform {
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "=4.5.0"
+    }
+  }
 }
 
-resource "azurerm_resource_group" "platform_rg" {
-  name     = "platform2-rg"
+provider "azurerm" {
+  subscription_id = "c0d63f1e-890a-409d-b009-fead0d47b556"
+  features {}
+}
+
+resource "azurerm_resource_group" "example_rg" {
+  name     = "example-rg"
   location = "West Europe"
 }
 
-# Réseau Virtuel et Sous-réseaux
-resource "azurerm_virtual_network" "main_vnet" {
-  name                = "platform2-vnet"
-  location            = azurerm_resource_group.platform_rg.location
-  resource_group_name = azurerm_resource_group.platform_rg.name
+resource "azurerm_virtual_network" "example_vnet" {
+  name                = "example-vnet"
+  location            = azurerm_resource_group.example_rg.location
+  resource_group_name = azurerm_resource_group.example_rg.name
   address_space       = ["10.0.0.0/16"]
 }
 
-resource "azurerm_subnet" "nosql_subnet" {
-  name                 = "nosql-subnet"
-  resource_group_name  = azurerm_resource_group.platform_rg.name
-  virtual_network_name = azurerm_virtual_network.main_vnet.name
+resource "azurerm_subnet" "example_subnet" {
+  name                 = "example-subnet"
+  resource_group_name  = azurerm_resource_group.example_rg.name
+  virtual_network_name = azurerm_virtual_network.example_vnet.name
   address_prefixes     = ["10.0.1.0/24"]
 }
 
-# Machine Virtuelle pour NoSQL
-resource "azurerm_linux_virtual_machine" "nosql_vm" {
-  name                = "nosql-vm"
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  location            = azurerm_resource_group.platform_rg.location
-  size                = "Standard_DS1_v2"
-  admin_username      = "adminuser"
-  admin_password      = "P@ssword123!"
+resource "azurerm_public_ip" "example_lb_ip" {
+  name                = "example-lb-ip"
+  location            = azurerm_resource_group.example_rg.location
+  resource_group_name = azurerm_resource_group.example_rg.name
+  allocation_method   = "Static"
+}
 
-  network_interface_ids = [azurerm_network_interface.nosql_nic.id]
+resource "azurerm_lb" "example_lb" {
+  name                = "example-lb"
+  location            = azurerm_resource_group.example_rg.location
+  resource_group_name = azurerm_resource_group.example_rg.name
+  sku                 = "Standard"
 
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "18.04-LTS"
-    version   = "latest"
+  frontend_ip_configuration {
+    name                 = "frontend-ip"
+    public_ip_address_id = azurerm_public_ip.example_lb_ip.id
   }
 }
 
-resource "azurerm_network_interface" "nosql_nic" {
-  name                = "nosql-nic"
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  location            = azurerm_resource_group.platform_rg.location
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.nosql_subnet.id
-    private_ip_address_allocation = "Dynamic"
-  }
+resource "azurerm_network_security_group" "example_nsg" {
+  name                = "example-nsg"
+  location            = azurerm_resource_group.example_rg.location
+  resource_group_name = azurerm_resource_group.example_rg.name
 }
 
-# Machine Virtuelle NoSQL dans une autre zone de disponibilité (AZ-2)
-resource "azurerm_linux_virtual_machine" "nosql_vm_az2" {
-  name                = "nosql-vm-az2"
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  location            = azurerm_resource_group.platform_rg.location
-  size                = "Standard_DS1_v2"
-  admin_username      = "adminuser"
-  admin_password      = "P@ssword123!"
-
-  network_interface_ids = [azurerm_network_interface.nosql_nic_az2.id]
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "18.04-LTS"
-    version   = "latest"
-  }
+resource "azurerm_network_security_rule" "allow_http" {
+  name                        = "allow_http"
+  priority                    = 1000
+  direction                   = "Inbound"
+  access                      = "Allow"
+  protocol                    = "Tcp"
+  source_port_range           = "*"
+  destination_port_range      = "80"
+  source_address_prefix       = "*"
+  destination_address_prefix  = "*"
+  resource_group_name         = azurerm_network_security_group.example_nsg.resource_group_name
+  network_security_group_name  = azurerm_network_security_group.example_nsg.name
 }
 
-resource "azurerm_network_interface" "nosql_nic_az2" {
-  name                = "nosql-nic-az2"
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  location            = azurerm_resource_group.platform_rg.location
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.nosql_subnet.id
-    private_ip_address_allocation = "Dynamic"
-  }
+resource "azurerm_lb_backend_address_pool" "example_lb_backend_pool" {
+  name            = "example-backend-pool"
+  loadbalancer_id = azurerm_lb.example_lb.id
 }
 
-# Virtual Machine Scale Set (VMSS) Spot Instances
-resource "azurerm_linux_virtual_machine_scale_set" "spot_vmss" {
-  name                = "spot-vmss"
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  location            = azurerm_resource_group.platform_rg.location
+resource "azurerm_lb_rule" "example_lb_rule" {
+  name                                    = "example-lb-rule"
+  loadbalancer_id                         = azurerm_lb.example_lb.id
+  frontend_ip_configuration_name           = azurerm_lb.example_lb.frontend_ip_configuration[0].name
+  backend_address_pool_ids                 = [azurerm_lb_backend_address_pool.example_lb_backend_pool.id]
+  protocol                                = "Tcp"
+  frontend_port                            = 80
+  backend_port                             = 80
+  idle_timeout_in_minutes                 = 4
+  enable_floating_ip                      = false
+}
+
+resource "azurerm_linux_virtual_machine_scale_set" "example_vmss" {
+  name                = "example-vmss"
+  location            = azurerm_resource_group.example_rg.location
+  resource_group_name = azurerm_resource_group.example_rg.name
   sku                 = "Standard_DS1_v2"
   instances           = 2
 
   admin_username      = "adminuser"
-  admin_password      = "P@ssword123!"
+  admin_ssh_key {
+    username   = "adminuser"
+    public_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFZJqqa8lswSmI5OM+ZU19YdVB3g0eX0MuPiVL+E5A/W Gabriel@LAPTOP-Q1SMBO4K"
+  }
 
   network_interface {
-    name = "spot-nic"
+    name    = "example-nic"
+    primary = true
 
     ip_configuration {
       name                          = "internal"
-      subnet_id                     = azurerm_subnet.nosql_subnet.id
+      subnet_id                     = azurerm_subnet.example_subnet.id
+      load_balancer_backend_address_pool_ids = [azurerm_lb_backend_address_pool.example_lb_backend_pool.id]
     }
   }
 
@@ -129,74 +122,4 @@ resource "azurerm_linux_virtual_machine_scale_set" "spot_vmss" {
     sku       = "18.04-LTS"
     version   = "latest"
   }
-
-  priority        = "Spot"
-  eviction_policy = "Deallocate"
-  max_bid_price   = -1  # Valeur maximale pour spot
-
-  # Utilisation d'une extension pour cloner un dépôt Git et lancer l'application
-  extension {
-    name                 = "CustomScriptForLinux"
-    publisher            = "Microsoft.Azure.Extensions"
-    type                 = "CustomScript"
-    type_handler_version = "2.0"
-
-    settings = <<SETTINGS
-      {
-        "fileUris": [],
-        "commandToExecute": "bash -c 'git clone <URL_DU_DEPOT_GIT> /path/vers/le/dossier; cd /path/vers/le/dossier; npm install; npm start'"
-      }
-    SETTINGS
-  }
-}
-
-# Load Balancer
-resource "azurerm_lb" "platform_lb" {
-  name                = "platform-lb"
-  location            = azurerm_resource_group.platform_rg.location
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  sku                 = "Standard"
-
-  frontend_ip_configuration {
-    name                 = "PublicIPAddress"
-    public_ip_address_id = azurerm_public_ip.platform_lb_public_ip.id
-  }
-}
-
-resource "azurerm_public_ip" "platform_lb_public_ip" {
-  name                = "platform-lb-pip"
-  location            = azurerm_resource_group.platform_rg.location
-  resource_group_name = azurerm_resource_group.platform_rg.name
-  allocation_method   = "Static"
-}
-
-# Groupes de Sécurité pour les NoSQL et VMSS
-resource "azurerm_network_security_group" "nsg_nosql" {
-  name                = "nsg-nosql"
-  location            = azurerm_resource_group.platform_rg.location
-  resource_group_name = azurerm_resource_group.platform_rg.name
-}
-
-resource "azurerm_network_security_rule" "allow_inbound" {
-  name                        = "allow_inbound_ssh"
-  priority                    = 1000
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "22"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = azurerm_network_security_group.nsg_nosql.resource_group_name
-  network_security_group_name  = azurerm_network_security_group.nsg_nosql.name
-}
-
-resource "azurerm_network_interface_security_group_association" "nosql_nic_assoc" {
-  network_interface_id      = azurerm_network_interface.nosql_nic.id
-  network_security_group_id = azurerm_network_security_group.nsg_nosql.id
-}
-
-resource "azurerm_network_interface_security_group_association" "nosql_nic_az2_assoc" {
-  network_interface_id      = azurerm_network_interface.nosql_nic_az2.id
-  network_security_group_id = azurerm_network_security_group.nsg_nosql.id
 }
